@@ -1,0 +1,7 @@
+[package]
+name = "gedcom-parser"
+version = "0.1.0"
+authors = ["John <jlek@findmypast.com>"]
+edition = "2018"
+
+[dependencies]
