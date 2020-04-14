@@ -5,3 +5,4 @@ authors = ["John <jlek@findmypast.com>"]
 edition = "2018"
 
 [dependencies]
+nom = "5.1.1"
