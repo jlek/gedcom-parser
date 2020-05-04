@@ -46,9 +46,8 @@ fn parse_tag(input: &str) -> IResult<&str, &str> {
 // Line value
 // ==========
 
-// TODO Can we use parse_terminator for this somehow? Just so we have a single source of truth.
 fn is_terminator(character: char) -> bool {
-  character == '\n' || character == '\r'
+  parse_terminator(&character.to_string()).is_ok()
 }
 
 fn parse_optional_line_value(input: &str) -> IResult<&str, Option<&str>> {
