@@ -8,10 +8,10 @@ use nom::{
 const DELIM: &str = " "; // Should be 0x20
 
 #[derive(Debug, PartialEq)]
-pub struct GedcomLine {
+pub struct GedcomLine<'tag, 'value> {
   level: u8,
-  tag: String,
-  value: Option<String>,
+  tag: &'tag str,
+  value: Option<&'value str>,
 }
 
 // =====
@@ -88,14 +88,7 @@ fn parse_gedcom_line(input: &str) -> IResult<&str, GedcomLine> {
   let (input, value) = parse_optional_line_value(input)?;
   let (input, _) = parse_terminator(input)?;
 
-  Ok((
-    input,
-    GedcomLine {
-      level,
-      tag: tag.to_string(),
-      value: value.map(|v| v.to_string()),
-    },
-  ))
+  Ok((input, GedcomLine { level, tag, value }))
 }
 
 #[test]
@@ -112,8 +105,8 @@ fn parse_gedcom_line_valid() {
     gedcom_line,
     GedcomLine {
       level: 0,
-      tag: "TAG".to_string(),
-      value: Some("Some value".to_string()),
+      tag: "TAG",
+      value: Some("Some value"),
     }
   );
 }
@@ -132,8 +125,8 @@ fn parse_gedcom_line_double_digit_level() {
     gedcom_line,
     GedcomLine {
       level: 10,
-      tag: "TAG".to_string(),
-      value: Some("Some value".to_string()),
+      tag: "TAG",
+      value: Some("Some value"),
     }
   );
 }
@@ -152,7 +145,7 @@ fn parse_gedcom_line_no_line_value() {
     gedcom_line,
     GedcomLine {
       level: 0,
-      tag: "TAG".to_string(),
+      tag: "TAG",
       value: None,
     }
   );
