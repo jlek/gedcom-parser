@@ -1,7 +1,7 @@
 use nom::{
   branch::alt,
-  bytes::complete::{tag as specific_characters, take_till, take_while_m_n},
-  combinator::map_res,
+  bytes::complete::{tag as specific_characters, take_till1, take_while_m_n},
+  combinator::{map_res, opt},
   IResult,
 };
 
@@ -11,7 +11,7 @@ const DELIM: &str = " "; // Should be 0x20
 pub struct GedcomLine {
   level: u8,
   tag: String,
-  value: String,
+  value: Option<String>,
 }
 
 // =====
@@ -51,8 +51,8 @@ fn is_terminator(character: char) -> bool {
   character == '\n' || character == '\r'
 }
 
-fn parse_line_value(input: &str) -> IResult<&str, &str> {
-  take_till(is_terminator)(input)
+fn parse_optional_line_value(input: &str) -> IResult<&str, Option<&str>> {
+  opt(take_till1(is_terminator))(input)
 }
 
 // ==========
@@ -61,6 +61,10 @@ fn parse_line_value(input: &str) -> IResult<&str, &str> {
 
 fn parse_delim(input: &str) -> IResult<&str, &str> {
   specific_characters(DELIM)(input)
+}
+
+fn parse_optional_delim(input: &str) -> IResult<&str, Option<&str>> {
+  opt(parse_delim)(input)
 }
 
 fn parse_terminator(input: &str) -> IResult<&str, &str> {
@@ -80,8 +84,8 @@ fn parse_gedcom_line(input: &str) -> IResult<&str, GedcomLine> {
   let (input, level) = parse_level(input)?;
   let (input, _) = parse_delim(input)?;
   let (input, tag) = parse_tag(input)?;
-  let (input, _) = parse_delim(input)?;
-  let (input, value) = parse_line_value(input)?;
+  let (input, _) = parse_optional_delim(input)?;
+  let (input, value) = parse_optional_line_value(input)?;
   let (input, _) = parse_terminator(input)?;
 
   Ok((
@@ -89,7 +93,7 @@ fn parse_gedcom_line(input: &str) -> IResult<&str, GedcomLine> {
     GedcomLine {
       level,
       tag: tag.to_string(),
-      value: value.to_string(),
+      value: value.map(|v| v.to_string()),
     },
   ))
 }
@@ -109,7 +113,7 @@ fn parse_gedcom_line_valid() {
     GedcomLine {
       level: 0,
       tag: "TAG".to_string(),
-      value: "Some value".to_string(),
+      value: Some("Some value".to_string()),
     }
   );
 }
@@ -129,7 +133,27 @@ fn parse_gedcom_line_double_digit_level() {
     GedcomLine {
       level: 10,
       tag: "TAG".to_string(),
-      value: "Some value".to_string(),
+      value: Some("Some value".to_string()),
+    }
+  );
+}
+
+#[test]
+fn parse_gedcom_line_no_line_value() {
+  // Arrange
+  let input = "0 TAG\n";
+
+  // Act
+  let (remaining_text, gedcom_line) = parse_gedcom_line(input).unwrap();
+
+  // Assert
+  assert_eq!(remaining_text, "");
+  assert_eq!(
+    gedcom_line,
+    GedcomLine {
+      level: 0,
+      tag: "TAG".to_string(),
+      value: None,
     }
   );
 }
