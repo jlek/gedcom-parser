@@ -2,17 +2,9 @@ use nom::{
   branch::alt,
   bytes::complete::{tag as specific_characters, take_till1, take_while_m_n},
   combinator::{map_res, opt},
+  sequence::preceded,
   IResult,
 };
-
-const DELIM: &str = " "; // Should be 0x20
-
-#[derive(Debug, PartialEq)]
-pub struct GedcomLine<'tag, 'value> {
-  level: u8,
-  tag: &'tag str,
-  value: Option<&'value str>,
-}
 
 // =====
 // Level
@@ -50,41 +42,78 @@ fn is_terminator(character: char) -> bool {
   parse_terminator(&character.to_string()).is_ok()
 }
 
-fn parse_optional_line_value(input: &str) -> IResult<&str, Option<&str>> {
-  opt(take_till1(is_terminator))(input)
+fn parse_line_value(input: &str) -> IResult<&str, &str> {
+  take_till1(is_terminator)(input)
 }
 
-// ==========
-// Whitespace
-// ==========
+// ============
+// Deliminators
+// ============
 
-fn parse_delim(input: &str) -> IResult<&str, &str> {
-  specific_characters(DELIM)(input)
+struct Delim {}
+
+struct InputIsNotADelimError<'input> {
+  input: &'input str,
 }
 
-fn parse_optional_delim(input: &str) -> IResult<&str, Option<&str>> {
-  opt(parse_delim)(input)
+const DELIM: &str = " "; // Should be 0x20
+
+fn from_delim(input: &str) -> Result<Delim, InputIsNotADelimError> {
+  match input {
+    DELIM => Ok(Delim {}),
+    _ => Err(InputIsNotADelimError { input }),
+  }
 }
 
-fn parse_terminator(input: &str) -> IResult<&str, &str> {
-  alt((
-    specific_characters("\r\n"),
-    specific_characters("\n\r"),
-    specific_characters("\r"),
-    specific_characters("\n"),
-  ))(input)
+fn parse_delim(input: &str) -> IResult<&str, Delim> {
+  map_res(specific_characters(DELIM), from_delim)(input)
+}
+
+// ===========
+// Terminators
+// ===========
+
+struct Terminator {}
+
+struct InputIsNotATerminatorError<'input> {
+  input: &'input str,
+}
+
+fn from_terminator(input: &str) -> Result<Terminator, InputIsNotATerminatorError> {
+  match input {
+    "\r\n" | "\n\r" | "\n" | "\r" => Ok(Terminator {}),
+    _ => Err(InputIsNotATerminatorError { input }),
+  }
+}
+
+fn parse_terminator(input: &str) -> IResult<&str, Terminator> {
+  map_res(
+    alt((
+      specific_characters("\r\n"),
+      specific_characters("\r\n"),
+      specific_characters("\r"),
+      specific_characters("\n"),
+    )),
+    from_terminator,
+  )(input)
 }
 
 // ==========
 // GedcomLine
 // ==========
 
+#[derive(Debug, PartialEq)]
+struct GedcomLine<'tag, 'value> {
+  level: u8,
+  tag: &'tag str,
+  value: Option<&'value str>,
+}
+
 fn parse_gedcom_line(input: &str) -> IResult<&str, GedcomLine> {
   let (input, level) = parse_level(input)?;
   let (input, _) = parse_delim(input)?;
   let (input, tag) = parse_tag(input)?;
-  let (input, _) = parse_optional_delim(input)?;
-  let (input, value) = parse_optional_line_value(input)?;
+  let (input, value) = opt(preceded(parse_delim, parse_line_value))(input)?;
   let (input, _) = parse_terminator(input)?;
 
   Ok((input, GedcomLine { level, tag, value }))
