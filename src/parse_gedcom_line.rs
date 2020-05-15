@@ -18,7 +18,7 @@ fn is_decimal_digit(character: char) -> bool {
   character.is_digit(10)
 }
 
-fn parse_level(input: &str) -> IResult<&str, u8> {
+pub fn parse_level(input: &str) -> IResult<&str, u8> {
   map_res(take_while_m_n(1, 2, is_decimal_digit), from_decimal)(input)
 }
 
@@ -141,9 +141,9 @@ fn parse_terminator(input: &str) -> IResult<&str, Terminator> {
 
 #[derive(Debug, PartialEq)]
 pub struct GedcomLine<'tag, 'value> {
-  level: u8,
-  tag: &'tag str,
-  value: Option<&'value str>,
+  pub level: u8,
+  pub tag: &'tag str,
+  pub value: Option<&'value str>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -165,7 +165,7 @@ impl From<GedcomLineWithValue<'_, '_>> for String {
   }
 }
 
-fn parse_gedcom_line(input: &str) -> IResult<&str, GedcomLine> {
+pub fn parse_gedcom_line(input: &str) -> IResult<&str, GedcomLine> {
   let (remaining_input, (level, _delim, tag, value, _terminator)) = tuple((
     parse_level,
     parse_delim,
