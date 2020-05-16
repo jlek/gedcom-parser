@@ -1,5 +1,5 @@
 use super::error::{Error, Result};
-use crate::parse_gedcom_line::{parse_gedcom_line, parse_level};
+use crate::parse_gedcom_line::{parse_gedcom_line, parse_level, GedcomLine};
 use serde::{
   de::{self, DeserializeSeed, MapAccess, Visitor},
   forward_to_deserialize_any, Deserialize,
@@ -11,26 +11,39 @@ where
 {
   let mut deserializer = Deserializer::from_str(s);
   let t = T::deserialize(&mut deserializer)?;
-  if deserializer.input.is_empty() {
+  if deserializer.remaining_input.is_empty() {
     Ok(t)
   } else {
     Err(Error::TrailingCharacters)
   }
 }
 
+enum DeserializerState {
+  DeserialisingLine,
+  DeserialisingKey,
+  DeserialisingValue,
+}
+
 pub struct Deserializer<'de> {
-  input: &'de str,
-  parse_tag: bool,
-  parse_value: bool,
+  remaining_input: &'de str,
+  current_line: GedcomLine<'de, 'de>,
+  state: DeserializerState,
 }
 
 impl<'de> Deserializer<'de> {
   pub fn from_str(input: &'de str) -> Self {
+    let (remaining_input, current_line) = parse_gedcom_line(input).unwrap();
     Deserializer {
-      input,
-      parse_tag: false,
-      parse_value: false,
+      remaining_input,
+      current_line,
+      state: DeserializerState::DeserialisingLine,
     }
+  }
+
+  fn parse_next_line(&mut self) {
+    let (remaining_input, next_line) = parse_gedcom_line(self.remaining_input).unwrap();
+    self.current_line = next_line;
+    self.remaining_input = remaining_input;
   }
 }
 
@@ -41,19 +54,19 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
   where
     V: Visitor<'de>,
   {
-    let (remaining_input, line) = parse_gedcom_line(self.input).unwrap();
-
-    if self.parse_tag || self.parse_value {
-      return self.deserialize_str(visitor);
-    }
-
-    let (_, next_level) = parse_level(remaining_input).unwrap();
-    if (next_level > line.level) {
-      self.deserialize_map(visitor)
-    } else {
-      Err(Error::Message(
-        "Need to parse value, but that is not yet implemented".to_owned(),
-      ))
+    match self.state {
+      DeserializerState::DeserialisingKey => self.deserialize_str(visitor),
+      DeserializerState::DeserialisingValue => self.deserialize_str(visitor),
+      DeserializerState::DeserialisingLine => {
+        let (_, next_level) = parse_level(self.remaining_input).unwrap();
+        if (next_level == self.current_line.level + 1) {
+          self.deserialize_map(visitor)
+        } else {
+          Err(Error::Message(
+            "Need to parse value, but that is not yet implemented".to_owned(),
+          ))
+        }
+      }
     }
   }
 
@@ -61,12 +74,13 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
   where
     V: Visitor<'de>,
   {
-    let (remaining_input, line) = parse_gedcom_line(self.input).unwrap();
-    if (self.parse_tag) {
-      return visitor.visit_borrowed_str(line.tag);
-    } else {
-      self.input = remaining_input;
-      return visitor.visit_borrowed_str(line.value.unwrap());
+    match self.state {
+      DeserializerState::DeserialisingKey => visitor.visit_borrowed_str(self.current_line.tag),
+      DeserializerState::DeserialisingValue => {
+        let result = visitor.visit_borrowed_str(self.current_line.value.unwrap());
+        result
+      }
+      _ => panic!("Aaaah!"),
     }
   }
 
@@ -74,19 +88,17 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
   where
     V: Visitor<'de>,
   {
-    let (remaining_input, line) = parse_gedcom_line(self.input).unwrap();
-    let (_, next_level) = parse_level(remaining_input).unwrap();
-    if !(next_level > line.level) {
+    let (_, next_level) = parse_level(self.remaining_input).unwrap();
+    if !(next_level > self.current_line.level) {
       return Err(Error::Message("Expected a map".to_owned()));
     }
-    self.input = remaining_input;
 
     let value = visitor.visit_map(GedcomMapAccess {
+      level: self.current_line.level,
       de: &mut self,
-      level: line.level,
     })?;
 
-    if (self.input.is_empty()) {
+    if (self.remaining_input.is_empty()) {
       return Ok(value);
     } else {
       return Err(Error::Message("Expected map end".to_owned()));
@@ -112,12 +124,13 @@ impl<'de, 'a> MapAccess<'de> for GedcomMapAccess<'a, 'de> {
   where
     K: DeserializeSeed<'de>,
   {
-    if self.de.input.is_empty() {
+    if self.de.remaining_input.is_empty() {
       return Ok(None);
     }
-    self.de.parse_tag = true;
+    self.de.parse_next_line();
+    self.de.state = DeserializerState::DeserialisingKey;
     let result = seed.deserialize(&mut *self.de).map(Some);
-    self.de.parse_tag = false;
+    self.de.state = DeserializerState::DeserialisingLine;
     result
   }
 
@@ -125,9 +138,9 @@ impl<'de, 'a> MapAccess<'de> for GedcomMapAccess<'a, 'de> {
   where
     V: DeserializeSeed<'de>,
   {
-    self.de.parse_value = true;
+    self.de.state = DeserializerState::DeserialisingValue;
     let result = seed.deserialize(&mut *self.de);
-    self.de.parse_value = false;
+    self.de.state = DeserializerState::DeserialisingLine;
     result
   }
 }
