@@ -6,6 +6,8 @@ pub type Result<T> = std::result::Result<T, Error>;
 #[derive(Clone, Debug, PartialEq)]
 pub enum Error {
   Message(String),
+  InvalidGedcomLine,
+  ExpectedGedcomLineWithValue,
   TrailingCharacters,
 }
 
@@ -25,8 +27,16 @@ impl Display for Error {
   fn fmt(&self, formatter: &mut Formatter) -> std::fmt::Result {
     match self {
       Error::Message(msg) => formatter.write_str(msg),
+      Error::InvalidGedcomLine => formatter.write_str("Invalid Gedcom line"),
+      Error::ExpectedGedcomLineWithValue => formatter.write_str("Expected Gedcom Line with value"),
       Error::TrailingCharacters => formatter.write_str("Trailing characters were left"),
     }
+  }
+}
+
+impl std::convert::From<nom::Err<(&str, nom::error::ErrorKind)>> for Error {
+  fn from(_nom_error: nom::Err<(&str, nom::error::ErrorKind)>) -> Error {
+    Error::InvalidGedcomLine
   }
 }
 
