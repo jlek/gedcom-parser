@@ -63,9 +63,7 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         if next_level == self.current_line.level + 1 {
           self.deserialize_map(visitor)
         } else {
-          Err(Error::Message(
-            "Need to parse value, but that is not yet implemented".to_owned(),
-          ))
+          unimplemented!()
         }
       }
     }
@@ -93,16 +91,16 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     V: Visitor<'de>,
   {
     let (_, next_level) = parse_level(self.remaining_input)?;
-    if !(next_level > self.current_line.level) {
-      return Err(Error::Message("Expected a map".to_owned()));
+    if next_level != self.current_line.level + 1 {
+      return Err(Error::ExpectedMap);
     }
 
     let value = visitor.visit_map(GedcomMapAccess { de: &mut self })?;
 
     if self.remaining_input.is_empty() {
-      return Ok(value);
+      Ok(value)
     } else {
-      return Err(Error::Message("Expected map end".to_owned()));
+      Err(Error::ExpectedMapEnd)
     }
   }
 

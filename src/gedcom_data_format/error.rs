@@ -8,6 +8,8 @@ pub enum Error {
   Message(String),
   InvalidGedcomLine,
   ExpectedGedcomLineWithValue,
+  ExpectedMap,
+  ExpectedMapEnd,
   TrailingCharacters,
 }
 
@@ -29,6 +31,10 @@ impl Display for Error {
       Error::Message(msg) => formatter.write_str(msg),
       Error::InvalidGedcomLine => formatter.write_str("Invalid Gedcom line"),
       Error::ExpectedGedcomLineWithValue => formatter.write_str("Expected Gedcom Line with value"),
+      Error::ExpectedMap => formatter.write_str("Expected map"),
+      Error::ExpectedMapEnd => {
+        formatter.write_str("Expected map to end (next level should be current level - 1)")
+      }
       Error::TrailingCharacters => formatter.write_str("Trailing characters were left"),
     }
   }
