@@ -59,7 +59,7 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
       DeserializerState::DeserialisingValue => self.deserialize_str(visitor),
       DeserializerState::DeserialisingLine => {
         let (_, next_level) = parse_level(self.remaining_input).unwrap();
-        if (next_level == self.current_line.level + 1) {
+        if next_level == self.current_line.level + 1 {
           self.deserialize_map(visitor)
         } else {
           Err(Error::Message(
@@ -93,12 +93,9 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
       return Err(Error::Message("Expected a map".to_owned()));
     }
 
-    let value = visitor.visit_map(GedcomMapAccess {
-      level: self.current_line.level,
-      de: &mut self,
-    })?;
+    let value = visitor.visit_map(GedcomMapAccess { de: &mut self })?;
 
-    if (self.remaining_input.is_empty()) {
+    if self.remaining_input.is_empty() {
       return Ok(value);
     } else {
       return Err(Error::Message("Expected map end".to_owned()));
@@ -114,7 +111,6 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
 
 struct GedcomMapAccess<'a, 'de: 'a> {
   de: &'a mut Deserializer<'de>,
-  level: u8,
 }
 
 impl<'de, 'a> MapAccess<'de> for GedcomMapAccess<'a, 'de> {
