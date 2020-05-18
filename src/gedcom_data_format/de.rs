@@ -127,9 +127,7 @@ impl<'de, 'a> MapAccess<'de> for GedcomMapAccess<'a, 'de> {
     }
     self.de.parse_next_line()?;
     self.de.state = DeserializerState::DeserialisingKey;
-    let result = seed.deserialize(&mut *self.de).map(Some);
-    self.de.state = DeserializerState::DeserialisingLine;
-    result
+    seed.deserialize(&mut *self.de).map(Some)
   }
 
   fn next_value_seed<V>(&mut self, seed: V) -> Result<V::Value>
@@ -137,9 +135,7 @@ impl<'de, 'a> MapAccess<'de> for GedcomMapAccess<'a, 'de> {
     V: DeserializeSeed<'de>,
   {
     self.de.state = DeserializerState::DeserialisingValue;
-    let result = seed.deserialize(&mut *self.de);
-    self.de.state = DeserializerState::DeserialisingLine;
-    result
+    seed.deserialize(&mut *self.de)
   }
 }
 
