@@ -140,7 +140,7 @@ impl<'de, 'a> MapAccess<'de> for GedcomMapAccess<'a, 'de> {
 }
 
 #[test]
-fn test_struct() {
+fn test_simple_struct() {
   use serde::Deserialize;
 
   #[derive(Deserialize, PartialEq, Debug)]
@@ -152,4 +152,45 @@ fn test_struct() {
   let input = "0 FOO\n1 BAR bar\n";
   let result: Foo = from_str(input).expect("No errors during this test");
   assert_eq!(result, Foo { bar: "bar" });
+}
+
+#[test]
+fn test_struct_with_irrelevant_field() {
+  use serde::Deserialize;
+
+  #[derive(Deserialize, PartialEq, Debug)]
+  struct Foo<'a> {
+    #[serde(rename(deserialize = "BAR"))]
+    bar: &'a str,
+  }
+
+  let input = "0 FOO\n1 BAR bar\n1 BAZ baz\n";
+  let result: Foo = from_str(input).expect("No errors during this test");
+  assert_eq!(result, Foo { bar: "bar" });
+}
+
+#[test]
+fn test_struct_with_multiple_fields() {
+  use serde::Deserialize;
+
+  #[derive(Deserialize, PartialEq, Debug)]
+  struct Foo<'a> {
+    #[serde(rename(deserialize = "BAR"))]
+    bar: &'a str,
+    #[serde(rename(deserialize = "BAZ"))]
+    baz: &'a str,
+    #[serde(rename(deserialize = "QUX"))]
+    qux: &'a str,
+  }
+
+  let input = "0 FOO\n1 BAR bar\n1 BAZ baz\n1 QUX qux\n";
+  let result: Foo = from_str(input).expect("No errors during this test");
+  assert_eq!(
+    result,
+    Foo {
+      bar: "bar",
+      baz: "baz",
+      qux: "qux"
+    }
+  );
 }
