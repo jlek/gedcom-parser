@@ -1,7 +1,7 @@
 use super::error::{Error, Result};
 use crate::parse_gedcom_line::{parse_gedcom_line, parse_level, GedcomLine};
 use serde::{
-  de::{self, DeserializeSeed, MapAccess, Visitor},
+  de::{self, DeserializeSeed, MapAccess, SeqAccess, Visitor},
   forward_to_deserialize_any, Deserialize,
 };
 
@@ -86,6 +86,22 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     }
   }
 
+  fn deserialize_seq<V>(mut self, visitor: V) -> Result<V::Value>
+  where
+    V: Visitor<'de>,
+  {
+    let value = visitor.visit_seq(GedcomSequenceAccess {
+      de: &mut self,
+      first: true,
+    })?;
+
+    if self.remaining_input.is_empty() {
+      Ok(value)
+    } else {
+      Err(Error::ExpectedMapEnd)
+    }
+  }
+
   fn deserialize_map<V>(mut self, visitor: V) -> Result<V::Value>
   where
     V: Visitor<'de>,
@@ -106,8 +122,34 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
 
   forward_to_deserialize_any! {
       bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char string
-      bytes byte_buf option unit unit_struct newtype_struct seq tuple
+      bytes byte_buf option unit unit_struct newtype_struct tuple
       tuple_struct struct enum identifier ignored_any
+  }
+}
+
+struct GedcomSequenceAccess<'a, 'de: 'a> {
+  de: &'a mut Deserializer<'de>,
+  first: bool,
+}
+
+impl<'de, 'a> SeqAccess<'de> for GedcomSequenceAccess<'a, 'de> {
+  type Error = Error;
+
+  fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>>
+  where
+    T: DeserializeSeed<'de>,
+  {
+    if self.first {
+      self.first = false;
+      return seed.deserialize(&mut *self.de).map(Some);
+    }
+    if self.de.remaining_input.is_empty() {
+      return Ok(None);
+    }
+
+    self.de.parse_next_line()?;
+    self.de.state = DeserializerState::DeserialisingValue;
+    seed.deserialize(&mut *self.de).map(Some)
   }
 }
 
@@ -191,6 +233,26 @@ fn test_struct_with_multiple_fields() {
       bar: "bar",
       baz: "baz",
       qux: "qux"
+    }
+  );
+}
+
+#[test]
+fn test_struct_with_array_field() {
+  use serde::Deserialize;
+
+  #[derive(Deserialize, PartialEq, Debug)]
+  struct Foo {
+    #[serde(rename(deserialize = "BAR"))]
+    bar: Vec<String>, // TODO Can this be a Vec<&str> somehow?
+  }
+
+  let input = "0 FOO\n1 BAR bar1\n1 BAR bar2\n1 BAR bar3\n";
+  let result: Foo = from_str(input).expect("No errors during this test");
+  assert_eq!(
+    result,
+    Foo {
+      bar: vec!["bar1".to_owned(), "bar2".to_owned(), "bar3".to_owned()]
     }
   );
 }
