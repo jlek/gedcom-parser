@@ -242,9 +242,9 @@ fn test_struct_with_array_field() {
   use serde::Deserialize;
 
   #[derive(Deserialize, PartialEq, Debug)]
-  struct Foo {
-    #[serde(rename(deserialize = "BAR"))]
-    bar: Vec<String>, // TODO Can this be a Vec<&str> somehow?
+  struct Foo<'a> {
+    #[serde(borrow, rename(deserialize = "BAR"))]
+    bar: Vec<&'a str>,
   }
 
   let input = "0 FOO\n1 BAR bar1\n1 BAR bar2\n1 BAR bar3\n";
@@ -252,7 +252,7 @@ fn test_struct_with_array_field() {
   assert_eq!(
     result,
     Foo {
-      bar: vec!["bar1".to_owned(), "bar2".to_owned(), "bar3".to_owned()]
+      bar: vec!["bar1", "bar2", "bar3"]
     }
   );
 }
@@ -262,17 +262,12 @@ fn test_struct_with_array_field_but_only_one_value() {
   use serde::Deserialize;
 
   #[derive(Deserialize, PartialEq, Debug)]
-  struct Foo {
-    #[serde(rename(deserialize = "BAR"))]
-    bar: Vec<String>, // TODO Can this be a Vec<&str> somehow?
+  struct Foo<'a> {
+    #[serde(borrow, rename(deserialize = "BAR"))]
+    bar: Vec<&'a str>,
   }
 
   let input = "0 FOO\n1 BAR bar1\n";
   let result: Foo = from_str(input).expect("No errors during this test");
-  assert_eq!(
-    result,
-    Foo {
-      bar: vec!["bar1".to_owned()]
-    }
-  );
+  assert_eq!(result, Foo { bar: vec!["bar1"] });
 }
