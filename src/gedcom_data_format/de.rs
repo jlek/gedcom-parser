@@ -256,3 +256,23 @@ fn test_struct_with_array_field() {
     }
   );
 }
+
+#[test]
+fn test_struct_with_array_field_but_only_one_value() {
+  use serde::Deserialize;
+
+  #[derive(Deserialize, PartialEq, Debug)]
+  struct Foo {
+    #[serde(rename(deserialize = "BAR"))]
+    bar: Vec<String>, // TODO Can this be a Vec<&str> somehow?
+  }
+
+  let input = "0 FOO\n1 BAR bar1\n";
+  let result: Foo = from_str(input).expect("No errors during this test");
+  assert_eq!(
+    result,
+    Foo {
+      bar: vec!["bar1".to_owned()]
+    }
+  );
+}
