@@ -1,7 +1,7 @@
 use super::error::{Error, Result};
 use crate::parse_gedcom_line::{parse_gedcom_line, parse_level, GedcomLine};
 use serde::{
-  de::{self, DeserializeSeed, MapAccess, SeqAccess, Visitor},
+  de::{self, DeserializeSeed, EnumAccess, MapAccess, SeqAccess, VariantAccess, Visitor},
   forward_to_deserialize_any, Deserialize,
 };
 
@@ -123,10 +123,22 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     }
   }
 
+  fn deserialize_enum<V>(
+    self,
+    _name: &'static str,
+    _variants: &'static [&'static str],
+    visitor: V,
+  ) -> Result<V::Value>
+  where
+    V: Visitor<'de>,
+  {
+    visitor.visit_enum(GedcomEnumAccess { de: self })
+  }
+
   forward_to_deserialize_any! {
       bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char string
       bytes byte_buf option unit unit_struct newtype_struct tuple
-      tuple_struct struct enum identifier ignored_any
+      tuple_struct struct identifier ignored_any
   }
 }
 
@@ -181,6 +193,54 @@ impl<'de, 'a> MapAccess<'de> for GedcomMapAccess<'a, 'de> {
   {
     self.de.state = DeserializerState::DeserialisingValue;
     seed.deserialize(&mut *self.de)
+  }
+}
+
+struct GedcomEnumAccess<'a, 'de: 'a> {
+  de: &'a mut Deserializer<'de>,
+}
+
+impl<'de, 'a> EnumAccess<'de> for GedcomEnumAccess<'a, 'de> {
+  type Error = Error;
+  type Variant = Self;
+
+  fn variant_seed<V>(self, seed: V) -> Result<(V::Value, Self::Variant)>
+  where
+    V: DeserializeSeed<'de>,
+  {
+    self.de.state = DeserializerState::DeserialisingKey;
+    let variant = seed.deserialize(&mut *self.de)?;
+    self.de.state = DeserializerState::DeserialisingLine;
+    Ok((variant, self))
+  }
+}
+
+impl<'de, 'a> VariantAccess<'de> for GedcomEnumAccess<'a, 'de> {
+  type Error = Error;
+
+  fn unit_variant(self) -> Result<()> {
+    unimplemented!()
+  }
+
+  fn newtype_variant_seed<T>(self, seed: T) -> Result<T::Value>
+  where
+    T: DeserializeSeed<'de>,
+  {
+    seed.deserialize(self.de)
+  }
+
+  fn tuple_variant<V>(self, _len: usize, visitor: V) -> Result<V::Value>
+  where
+    V: Visitor<'de>,
+  {
+    unimplemented!()
+  }
+
+  fn struct_variant<V>(self, _fields: &'static [&'static str], visitor: V) -> Result<V::Value>
+  where
+    V: Visitor<'de>,
+  {
+    unimplemented!()
   }
 }
 
@@ -304,4 +364,33 @@ fn test_struct_with_array_field_but_only_one_value() {
   let input = "0 FOO\n1 BAR bar1\n";
   let result: Foo = from_str(input).expect("No errors during this test");
   assert_eq!(result, Foo { bar: vec!["bar1"] });
+}
+
+#[test]
+fn test_enum() {
+  use serde::Deserialize;
+
+  #[derive(Deserialize, PartialEq, Debug)]
+  struct Foo<'a> {
+    #[serde(rename(deserialize = "BAR"))]
+    bar: &'a str,
+  }
+
+  #[derive(Deserialize, PartialEq, Debug)]
+  struct Baz<'a> {
+    #[serde(rename(deserialize = "QUX"))]
+    qux: &'a str,
+  }
+
+  #[derive(Deserialize, PartialEq, Debug)]
+  enum FooBaz<'a> {
+    #[serde(borrow, rename = "FOO")]
+    Foo(Foo<'a>),
+    #[serde(borrow, rename = "BAR")]
+    Baz(Baz<'a>),
+  }
+
+  let input = "0 FOO\n1 BAR bar\n";
+  let result: FooBaz = from_str(input).expect("No errors during this test");
+  assert_eq!(result, FooBaz::Foo(Foo { bar: "bar" }));
 }
