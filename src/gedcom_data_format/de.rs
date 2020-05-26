@@ -18,6 +18,7 @@ where
   }
 }
 
+#[derive(Debug)]
 enum DeserializerState {
   DeserialisingLine,
   DeserialisingKey,
@@ -57,13 +58,15 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
   {
     match self.state {
       DeserializerState::DeserialisingKey => self.deserialize_str(visitor),
-      DeserializerState::DeserialisingValue => self.deserialize_str(visitor),
-      DeserializerState::DeserialisingLine => {
+      _ => {
+        if self.remaining_input.is_empty() {
+          return self.deserialize_str(visitor);
+        }
         let (_, next_level) = parse_level(self.remaining_input)?;
         if next_level == self.current_line.level + 1 {
           self.deserialize_map(visitor)
         } else {
-          unimplemented!()
+          self.deserialize_str(visitor)
         }
       }
     }
@@ -233,6 +236,37 @@ fn test_struct_with_multiple_fields() {
       bar: "bar",
       baz: "baz",
       qux: "qux"
+    }
+  );
+}
+
+#[test]
+fn test_nested_struct() {
+  use serde::Deserialize;
+
+  #[derive(Deserialize, PartialEq, Debug)]
+  struct Foo<'a> {
+    #[serde(borrow, rename(deserialize = "BAR"))]
+    bar: Bar<'a>,
+  }
+
+  #[derive(Deserialize, PartialEq, Debug)]
+  struct Bar<'a> {
+    #[serde(rename(deserialize = "BAZ"))]
+    baz: &'a str,
+    #[serde(rename(deserialize = "QUX"))]
+    qux: &'a str,
+  }
+
+  let input = "0 FOO\n1 BAR\n2 BAZ baz\n2 QUX qux\n";
+  let result: Foo = from_str(input).expect("No errors during this test");
+  assert_eq!(
+    result,
+    Foo {
+      bar: Bar {
+        baz: "baz",
+        qux: "qux"
+      }
     }
   );
 }
