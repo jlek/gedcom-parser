@@ -219,7 +219,7 @@ impl<'de, 'a> VariantAccess<'de> for GedcomEnumAccess<'a, 'de> {
   type Error = Error;
 
   fn unit_variant(self) -> Result<()> {
-    unimplemented!()
+    Ok(())
   }
 
   fn newtype_variant_seed<T>(self, seed: T) -> Result<T::Value>
@@ -393,4 +393,19 @@ fn test_enum() {
   let input = "0 FOO\n1 BAR bar\n";
   let result: FooBaz = from_str(input).expect("No errors during this test");
   assert_eq!(result, FooBaz::Foo(Foo { bar: "bar" }));
+}
+
+#[test]
+fn test_enum_unit() {
+  use serde::Deserialize;
+
+  #[derive(Deserialize, PartialEq, Debug)]
+  enum Foo {
+    #[serde(rename = "BAR")]
+    Bar,
+  }
+
+  let input = "0 BAR\n";
+  let result: Foo = from_str(input).expect("No errors during this test");
+  assert_eq!(result, Foo::Bar);
 }
