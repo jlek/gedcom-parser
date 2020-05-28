@@ -47,6 +47,12 @@ impl<'de> Deserializer<'de> {
     self.remaining_input = remaining_input;
     Ok(())
   }
+
+  fn peek_next_level(&self) -> Option<u8> {
+    parse_level(self.remaining_input)
+      .map(|(_, level)| level)
+      .ok()
+  }
 }
 
 impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
@@ -62,8 +68,11 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         if self.remaining_input.is_empty() {
           return self.deserialize_str(visitor);
         }
-        let (_, next_level) = parse_level(self.remaining_input)?;
-        if next_level == self.current_line.level + 1 {
+        if self
+          .peek_next_level()
+          .map(|next_level| next_level == self.current_line.level + 1)
+          .unwrap_or_default()
+        {
           self.deserialize_map(visitor)
         } else {
           self.deserialize_str(visitor)
@@ -109,18 +118,18 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
   where
     V: Visitor<'de>,
   {
-    let (_, next_level) = parse_level(self.remaining_input)?;
-    if next_level != self.current_line.level + 1 {
+    if self
+      .peek_next_level()
+      .map(|next_level| next_level != self.current_line.level + 1)
+      .unwrap_or_default()
+    {
       return Err(Error::ExpectedMap);
     }
 
-    let value = visitor.visit_map(GedcomMapAccess { de: &mut self })?;
+    let map_level = self.current_line.level + 1;
+    let value = visitor.visit_map(GedcomMapAccess::new(&mut self, map_level))?;
 
-    if self.remaining_input.is_empty() {
-      Ok(value)
-    } else {
-      Err(Error::ExpectedMapEnd)
-    }
+    Ok(value)
   }
 
   fn deserialize_enum<V>(
@@ -170,6 +179,13 @@ impl<'de, 'a> SeqAccess<'de> for GedcomSequenceAccess<'a, 'de> {
 
 struct GedcomMapAccess<'a, 'de: 'a> {
   de: &'a mut Deserializer<'de>,
+  map_level: u8,
+}
+
+impl<'a, 'de> GedcomMapAccess<'a, 'de> {
+  fn new(de: &'a mut Deserializer<'de>, map_level: u8) -> Self {
+    Self { de: de, map_level }
+  }
 }
 
 impl<'de, 'a> MapAccess<'de> for GedcomMapAccess<'a, 'de> {
@@ -179,9 +195,16 @@ impl<'de, 'a> MapAccess<'de> for GedcomMapAccess<'a, 'de> {
   where
     K: DeserializeSeed<'de>,
   {
-    if self.de.remaining_input.is_empty() {
+    if self
+      .de
+      .peek_next_level()
+      .map(|level| level == self.map_level - 1)
+      .unwrap_or(true)
+    // If next level is None, then there is no next line, and we're done
+    {
       return Ok(None);
     }
+
     self.de.parse_next_line()?;
     self.de.state = DeserializerState::DeserialisingKey;
     seed.deserialize(&mut *self.de).map(Some)
@@ -327,6 +350,35 @@ fn test_nested_struct() {
         baz: "baz",
         qux: "qux"
       }
+    }
+  );
+}
+
+#[test]
+fn test_nested_struct_and_then_another_value() {
+  use serde::Deserialize;
+
+  #[derive(Deserialize, PartialEq, Debug)]
+  struct Foo<'a> {
+    #[serde(borrow, rename(deserialize = "BAR"))]
+    bar: Bar<'a>,
+    #[serde(rename(deserialize = "QUX"))]
+    qux: &'a str,
+  }
+
+  #[derive(Deserialize, PartialEq, Debug)]
+  struct Bar<'a> {
+    #[serde(rename(deserialize = "BAZ"))]
+    baz: &'a str,
+  }
+
+  let input = "0 FOO\n1 BAR\n2 BAZ baz\n1 QUX qux\n";
+  let result: Foo = from_str(input).expect("No errors during this test");
+  assert_eq!(
+    result,
+    Foo {
+      bar: Bar { baz: "baz" },
+      qux: "qux"
     }
   );
 }
