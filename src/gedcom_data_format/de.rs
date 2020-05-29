@@ -20,7 +20,6 @@ where
 
 #[derive(Debug)]
 enum DeserializerState {
-  DeserialisingLine,
   DeserialisingKey,
   DeserialisingValue,
 }
@@ -41,7 +40,7 @@ impl<'de> Deserializer<'de> {
         remaining_input,
         current_line,
         next_line: None,
-        state: DeserializerState::DeserialisingLine,
+        state: DeserializerState::DeserialisingValue,
       });
     }
 
@@ -50,7 +49,7 @@ impl<'de> Deserializer<'de> {
       remaining_input,
       current_line,
       next_line: Some(next_line),
-      state: DeserializerState::DeserialisingLine,
+      state: DeserializerState::DeserialisingValue,
     })
   }
 
@@ -81,7 +80,7 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
   {
     match self.state {
       DeserializerState::DeserialisingKey => self.deserialize_str(visitor),
-      _ => {
+      DeserializerState::DeserialisingValue => {
         if self
           .next_line
           .map(|line| line.level == self.current_line.level + 1)
@@ -257,7 +256,7 @@ impl<'de, 'a> EnumAccess<'de> for GedcomEnumAccess<'a, 'de> {
   {
     self.de.state = DeserializerState::DeserialisingKey;
     let variant = seed.deserialize(&mut *self.de)?;
-    self.de.state = DeserializerState::DeserialisingLine;
+    self.de.state = DeserializerState::DeserialisingValue;
     Ok((variant, self))
   }
 }
