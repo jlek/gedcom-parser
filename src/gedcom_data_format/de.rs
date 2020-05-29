@@ -35,30 +35,39 @@ pub struct Deserializer<'de> {
 impl<'de> Deserializer<'de> {
   pub fn from_str(input: &'de str) -> Result<Self> {
     let (remaining_input, current_line) = parse_gedcom_line(input)?;
-    let next_line = if remaining_input.is_empty() {
-      None
-    } else {
-      Some(parse_gedcom_line(remaining_input).map(|(_, line)| line)?)
-    };
+
+    if remaining_input.is_empty() {
+      return Ok(Deserializer {
+        remaining_input,
+        current_line,
+        next_line: None,
+        state: DeserializerState::DeserialisingLine,
+      });
+    }
+
+    let (remaining_input, next_line) = parse_gedcom_line(remaining_input)?;
     Ok(Deserializer {
       remaining_input,
       current_line,
-      next_line,
+      next_line: Some(next_line),
       state: DeserializerState::DeserialisingLine,
     })
   }
 
   fn parse_next_line(&mut self) -> Result<()> {
-    let (remaining_input, next_line) = parse_gedcom_line(self.remaining_input)?;
+    // TODO Return an Error if next line is None;
+    let next_line = self.next_line.unwrap();
+
+    if self.remaining_input.is_empty() {
+      self.current_line = next_line;
+      self.next_line = None;
+      return Ok(());
+    }
+
+    let (remaining_input, next_next_line) = parse_gedcom_line(self.remaining_input)?;
     self.current_line = next_line;
+    self.next_line = Some(next_next_line);
     self.remaining_input = remaining_input;
-
-    self.next_line = if remaining_input.is_empty() {
-      None
-    } else {
-      Some(parse_gedcom_line(remaining_input).map(|(_, line)| line)?)
-    };
-
     Ok(())
   }
 }
