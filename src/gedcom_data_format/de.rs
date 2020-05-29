@@ -28,15 +28,22 @@ enum DeserializerState {
 pub struct Deserializer<'de> {
   remaining_input: &'de str,
   current_line: GedcomLine<'de, 'de>,
+  next_line: Option<GedcomLine<'de, 'de>>,
   state: DeserializerState,
 }
 
 impl<'de> Deserializer<'de> {
   pub fn from_str(input: &'de str) -> Result<Self> {
     let (remaining_input, current_line) = parse_gedcom_line(input)?;
+    let next_line = if remaining_input.is_empty() {
+      None
+    } else {
+      Some(parse_gedcom_line(remaining_input).map(|(_, line)| line)?)
+    };
     Ok(Deserializer {
       remaining_input,
       current_line,
+      next_line,
       state: DeserializerState::DeserialisingLine,
     })
   }
@@ -45,13 +52,14 @@ impl<'de> Deserializer<'de> {
     let (remaining_input, next_line) = parse_gedcom_line(self.remaining_input)?;
     self.current_line = next_line;
     self.remaining_input = remaining_input;
-    Ok(())
-  }
 
-  fn peek_next_level(&self) -> Option<u8> {
-    parse_level(self.remaining_input)
-      .map(|(_, level)| level)
-      .ok()
+    self.next_line = if remaining_input.is_empty() {
+      None
+    } else {
+      Some(parse_gedcom_line(remaining_input).map(|(_, line)| line)?)
+    };
+
+    Ok(())
   }
 }
 
@@ -65,12 +73,9 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     match self.state {
       DeserializerState::DeserialisingKey => self.deserialize_str(visitor),
       _ => {
-        if self.remaining_input.is_empty() {
-          return self.deserialize_str(visitor);
-        }
         if self
-          .peek_next_level()
-          .map(|next_level| next_level == self.current_line.level + 1)
+          .next_line
+          .map(|line| line.level == self.current_line.level + 1)
           .unwrap_or_default()
         {
           self.deserialize_map(visitor)
@@ -102,16 +107,9 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
   where
     V: Visitor<'de>,
   {
-    let value = visitor.visit_seq(GedcomSequenceAccess {
-      de: &mut self,
-      first: true,
-    })?;
+    let value = visitor.visit_seq(GedcomSequenceAccess::new(&mut self))?;
 
-    if self.remaining_input.is_empty() {
-      Ok(value)
-    } else {
-      Err(Error::ExpectedMapEnd)
-    }
+    Ok(value)
   }
 
   fn deserialize_map<V>(mut self, visitor: V) -> Result<V::Value>
@@ -119,8 +117,8 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     V: Visitor<'de>,
   {
     if self
-      .peek_next_level()
-      .map(|next_level| next_level != self.current_line.level + 1)
+      .next_line
+      .map(|line| line.level != self.current_line.level + 1)
       .unwrap_or_default()
     {
       return Err(Error::ExpectedMap);
@@ -154,6 +152,18 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
 struct GedcomSequenceAccess<'a, 'de: 'a> {
   de: &'a mut Deserializer<'de>,
   first: bool,
+  tag: &'a str,
+}
+
+impl<'a, 'de> GedcomSequenceAccess<'a, 'de> {
+  fn new(de: &'a mut Deserializer<'de>) -> Self {
+    let tag = de.current_line.tag;
+    Self {
+      de,
+      first: true,
+      tag,
+    }
+  }
 }
 
 impl<'de, 'a> SeqAccess<'de> for GedcomSequenceAccess<'a, 'de> {
@@ -167,7 +177,12 @@ impl<'de, 'a> SeqAccess<'de> for GedcomSequenceAccess<'a, 'de> {
       self.first = false;
       return seed.deserialize(&mut *self.de).map(Some);
     }
-    if self.de.remaining_input.is_empty() {
+    if self
+      .de
+      .next_line
+      .map(|line| line.tag != self.tag)
+      .unwrap_or(true)
+    {
       return Ok(None);
     }
 
@@ -197,8 +212,8 @@ impl<'de, 'a> MapAccess<'de> for GedcomMapAccess<'a, 'de> {
   {
     if self
       .de
-      .peek_next_level()
-      .map(|level| level == self.map_level - 1)
+      .next_line
+      .map(|line| line.level == self.map_level - 1)
       .unwrap_or(true)
     // If next level is None, then there is no next line, and we're done
     {
@@ -399,6 +414,29 @@ fn test_struct_with_array_field() {
     result,
     Foo {
       bar: vec!["bar1", "bar2", "bar3"]
+    }
+  );
+}
+
+#[test]
+fn test_struct_with_array_field_and_then_another_value() {
+  use serde::Deserialize;
+
+  #[derive(Deserialize, PartialEq, Debug)]
+  struct Foo<'a> {
+    #[serde(borrow, rename(deserialize = "BAR"))]
+    bar: Vec<&'a str>,
+    #[serde(rename(deserialize = "BAZ"))]
+    baz: &'a str,
+  }
+
+  let input = "0 FOO\n1 BAR bar1\n1 BAR bar2\n1 BAR bar3\n1 BAZ baz\n";
+  let result: Foo = from_str(input).expect("No errors during this test");
+  assert_eq!(
+    result,
+    Foo {
+      bar: vec!["bar1", "bar2", "bar3"],
+      baz: "baz"
     }
   );
 }

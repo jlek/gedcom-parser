@@ -139,7 +139,7 @@ fn parse_terminator(input: &str) -> IResult<&str, Terminator> {
 // GedcomLine
 // ==========
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct GedcomLine<'tag, 'value> {
   pub level: u8,
   pub tag: &'tag str,
