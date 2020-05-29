@@ -107,7 +107,6 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
           .ok_or(Error::ExpectedGedcomLineWithValue)?;
         visitor.visit_borrowed_str(value)
       }
-      _ => panic!("Aaaah!"),
     }
   }
 
@@ -188,7 +187,7 @@ impl<'de, 'a> SeqAccess<'de> for GedcomSequenceAccess<'a, 'de> {
     if self
       .de
       .next_line
-      .map(|line| line.tag != self.tag)
+      .map(|line| line.level != 0 && line.tag != self.tag)
       .unwrap_or(true)
     {
       return Ok(None);
@@ -223,7 +222,6 @@ impl<'de, 'a> MapAccess<'de> for GedcomMapAccess<'a, 'de> {
       .next_line
       .map(|line| line.level == self.map_level - 1)
       .unwrap_or(true)
-    // If next level is None, then there is no next line, and we're done
     {
       return Ok(None);
     }
@@ -275,14 +273,14 @@ impl<'de, 'a> VariantAccess<'de> for GedcomEnumAccess<'a, 'de> {
     seed.deserialize(self.de)
   }
 
-  fn tuple_variant<V>(self, _len: usize, visitor: V) -> Result<V::Value>
+  fn tuple_variant<V>(self, _len: usize, _visitor: V) -> Result<V::Value>
   where
     V: Visitor<'de>,
   {
     unimplemented!()
   }
 
-  fn struct_variant<V>(self, _fields: &'static [&'static str], visitor: V) -> Result<V::Value>
+  fn struct_variant<V>(self, _fields: &'static [&'static str], _visitor: V) -> Result<V::Value>
   where
     V: Visitor<'de>,
   {
@@ -506,4 +504,29 @@ fn test_enum_unit() {
   let input = "0 BAR\n";
   let result: Foo = from_str(input).expect("No errors during this test");
   assert_eq!(result, Foo::Bar);
+}
+
+#[test]
+fn test_sequence_of_enum() {
+  use serde::Deserialize;
+
+  #[derive(Deserialize, PartialEq, Debug)]
+  struct Foo<'a> {
+    #[serde(rename(deserialize = "BAR"))]
+    bar: &'a str,
+  }
+
+  #[derive(Deserialize, PartialEq, Debug)]
+  enum FooBaz<'a> {
+    #[serde(borrow, rename = "FOO")]
+    Foo(Foo<'a>),
+    #[serde(rename = "BAZ")]
+    Baz,
+  }
+
+  let input = "0 FOO\n1 BAR bar\n0 BAZ\n";
+  let result: Vec<FooBaz> = from_str(input).expect("No errors during this test");
+  assert_eq!(result.len(), 2);
+  assert_eq!(result[0], FooBaz::Foo(Foo { bar: "bar" }));
+  assert_eq!(result[1], FooBaz::Baz);
 }
