@@ -4,7 +4,6 @@
 extern crate nom;
 mod gedcom_data_format;
 mod gedcom_entities;
-mod parse_gedcom_header;
 mod parse_gedcom_line;
 
 fn main() {}
