@@ -1,5 +1,5 @@
 use super::error::{Error, Result};
-use crate::parse_gedcom_line::{parse_gedcom_line, parse_level, GedcomLine};
+use crate::parse_gedcom_line::{parse_gedcom_line, GedcomLine};
 use serde::{
   de::{self, DeserializeSeed, EnumAccess, MapAccess, SeqAccess, VariantAccess, Visitor},
   forward_to_deserialize_any, Deserialize,
@@ -22,8 +22,10 @@ where
 enum DeserializerState {
   DeserialisingKey,
   DeserialisingValue,
+  DeserialisingStringValue,
 }
 
+#[derive(Debug)]
 pub struct Deserializer<'de> {
   remaining_input: &'de str,
   current_line: GedcomLine<'de, 'de>,
@@ -80,6 +82,7 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
   {
     match self.state {
       DeserializerState::DeserialisingKey => self.deserialize_str(visitor),
+      DeserializerState::DeserialisingStringValue => self.deserialize_str(visitor),
       DeserializerState::DeserialisingValue => {
         if self
           .next_line
@@ -100,7 +103,7 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
   {
     match self.state {
       DeserializerState::DeserialisingKey => visitor.visit_borrowed_str(self.current_line.tag),
-      DeserializerState::DeserialisingValue => {
+      _ => {
         let value = self
           .current_line
           .value
@@ -202,6 +205,7 @@ impl<'de, 'a> SeqAccess<'de> for GedcomSequenceAccess<'a, 'de> {
 struct GedcomMapAccess<'a, 'de: 'a> {
   de: &'a mut Deserializer<'de>,
   first: bool,
+  seeding_implicit_field: bool,
   map_level: u8,
 }
 
@@ -210,6 +214,7 @@ impl<'a, 'de> GedcomMapAccess<'a, 'de> {
     Self {
       de: de,
       first: true,
+      seeding_implicit_field: false,
       map_level,
     }
   }
@@ -225,6 +230,7 @@ impl<'de, 'a> MapAccess<'de> for GedcomMapAccess<'a, 'de> {
     if self.first {
       self.first = false;
       if self.de.current_line.value.is_some() {
+        self.seeding_implicit_field = true;
         self.de.state = DeserializerState::DeserialisingKey;
         return seed.deserialize(&mut *self.de).map(Some);
       }
@@ -248,7 +254,12 @@ impl<'de, 'a> MapAccess<'de> for GedcomMapAccess<'a, 'de> {
   where
     V: DeserializeSeed<'de>,
   {
-    self.de.state = DeserializerState::DeserialisingValue;
+    if self.seeding_implicit_field {
+      self.de.state = DeserializerState::DeserialisingStringValue;
+      self.seeding_implicit_field = false;
+    } else {
+      self.de.state = DeserializerState::DeserialisingValue;
+    }
     seed.deserialize(&mut *self.de)
   }
 }
@@ -404,6 +415,40 @@ fn test_nested_struct() {
     result,
     Foo {
       bar: Bar {
+        baz: "baz",
+        qux: "qux"
+      }
+    }
+  );
+}
+
+#[test]
+fn test_nested_struct_with_implicit_field() {
+  use serde::Deserialize;
+
+  #[derive(Deserialize, PartialEq, Debug)]
+  struct Foo<'a> {
+    #[serde(borrow, rename(deserialize = "BAR"))]
+    bar: Bar<'a>,
+  }
+
+  #[derive(Deserialize, PartialEq, Debug)]
+  struct Bar<'a> {
+    #[serde(borrow, rename(deserialize = "BAR"))]
+    bar: &'a str,
+    #[serde(rename(deserialize = "BAZ"))]
+    baz: &'a str,
+    #[serde(rename(deserialize = "QUX"))]
+    qux: &'a str,
+  }
+
+  let input = "0 FOO foo\n1 BAR bar\n2 BAZ baz\n2 QUX qux\n";
+  let result: Foo = from_str(input).expect("No errors during this test");
+  assert_eq!(
+    result,
+    Foo {
+      bar: Bar {
+        bar: "bar",
         baz: "baz",
         qux: "qux"
       }
