@@ -201,12 +201,17 @@ impl<'de, 'a> SeqAccess<'de> for GedcomSequenceAccess<'a, 'de> {
 
 struct GedcomMapAccess<'a, 'de: 'a> {
   de: &'a mut Deserializer<'de>,
+  first: bool,
   map_level: u8,
 }
 
 impl<'a, 'de> GedcomMapAccess<'a, 'de> {
   fn new(de: &'a mut Deserializer<'de>, map_level: u8) -> Self {
-    Self { de: de, map_level }
+    Self {
+      de: de,
+      first: true,
+      map_level,
+    }
   }
 }
 
@@ -217,6 +222,14 @@ impl<'de, 'a> MapAccess<'de> for GedcomMapAccess<'a, 'de> {
   where
     K: DeserializeSeed<'de>,
   {
+    if self.first {
+      self.first = false;
+      if self.de.current_line.value.is_some() {
+        self.de.state = DeserializerState::DeserialisingKey;
+        return seed.deserialize(&mut *self.de).map(Some);
+      }
+    }
+
     if self
       .de
       .next_line
@@ -301,6 +314,29 @@ fn test_simple_struct() {
   let input = "0 FOO\n1 BAR bar\n";
   let result: Foo = from_str(input).expect("No errors during this test");
   assert_eq!(result, Foo { bar: "bar" });
+}
+
+#[test]
+fn test_struct_with_implicit_field() {
+  use serde::Deserialize;
+
+  #[derive(Deserialize, PartialEq, Debug)]
+  struct Foo<'a> {
+    #[serde(rename(deserialize = "FOO"))]
+    foo: &'a str,
+    #[serde(rename(deserialize = "BAR"))]
+    bar: &'a str,
+  }
+
+  let input = "0 FOO foo\n1 BAR bar\n";
+  let result: Foo = from_str(input).expect("No errors during this test");
+  assert_eq!(
+    result,
+    Foo {
+      foo: "foo",
+      bar: "bar"
+    }
+  );
 }
 
 #[test]
