@@ -1,5 +1,5 @@
 use super::error::{Error, Result};
-use crate::parse_gedcom_line::{parse_gedcom_line, GedcomLine};
+use crate::parsers::{parse_gedcom_line, GedcomLine};
 use serde::{
   de::{self, DeserializeSeed, EnumAccess, MapAccess, SeqAccess, VariantAccess, Visitor},
   forward_to_deserialize_any, Deserialize,
@@ -162,9 +162,20 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     }
   }
 
+  fn deserialize_option<V>(self, visitor: V) -> Result<V::Value>
+  where
+    V: Visitor<'de>,
+  {
+    if self.current_line.value.is_some() {
+      visitor.visit_some(self)
+    } else {
+      visitor.visit_none()
+    }
+  }
+
   forward_to_deserialize_any! {
       bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char string
-      bytes byte_buf option unit unit_struct newtype_struct tuple
+      bytes byte_buf unit unit_struct newtype_struct tuple
       tuple_struct struct identifier ignored_any
   }
 }
@@ -396,6 +407,29 @@ fn test_simple_struct() {
   let input = "0 FOO\n1 BAR bar\n";
   let result: Foo = from_str(input).expect("No errors during this test");
   assert_eq!(result, Foo { bar: "bar" });
+}
+
+#[test]
+fn test_struct_with_optional_field() {
+  use serde::Deserialize;
+
+  #[derive(Deserialize, PartialEq, Debug)]
+  struct Foo<'a> {
+    #[serde(rename(deserialize = "BAR"))]
+    bar: Option<&'a str>,
+    #[serde(rename(deserialize = "BAZ"))]
+    baz: Option<&'a str>,
+  }
+
+  let input = "0 FOO\n1 BAR bar\n";
+  let result: Foo = from_str(input).expect("No errors during this test");
+  assert_eq!(
+    result,
+    Foo {
+      bar: Some("bar"),
+      baz: None
+    }
+  );
 }
 
 #[test]
