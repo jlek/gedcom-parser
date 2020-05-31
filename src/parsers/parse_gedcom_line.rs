@@ -15,19 +15,6 @@ fn parse_level(input: &str) -> IResult<&str, u8> {
   map_res(take_while_m_n(1, 2, is_decimal_digit), from_decimal)(input)
 }
 
-fn parse_specific_level<'level, 'input>(
-  level: u8,
-) -> impl Fn(&'input str) -> IResult<&'input str, u8> {
-  if level >= 100 {
-    panic!(
-      "Level {} is too large to parse; Gedcom only support two-digits levels.",
-      level
-    );
-  }
-
-  move |input| map(specific_characters(&level.to_string()[..]), move |_| level)(input)
-}
-
 // ===
 // Tag
 // ===
@@ -38,19 +25,6 @@ fn is_alphanumeric_or_underscore(character: char) -> bool {
 
 fn parse_tag(input: &str) -> IResult<&str, &str> {
   take_while_m_n(1, 32, is_alphanumeric_or_underscore)(input)
-}
-
-fn parse_specific_tag<'input>(
-  tag: &str,
-) -> impl Fn(&'input str) -> IResult<&'input str, &'input str> {
-  if tag.len() > 32 {
-    panic!(
-      "Cannot parse tag \"{}\", because it is too long - tags can not be longer than 32 characters",
-      tag
-    );
-  }
-  let tag_owned = tag.to_owned();
-  move |input| specific_characters(&tag_owned[..])(input)
 }
 
 // ==========
@@ -67,13 +41,6 @@ fn is_not_terminator(character: char) -> bool {
 
 fn parse_line_value(input: &str) -> IResult<&str, &str> {
   take_till1(is_terminator)(input)
-}
-
-fn parse_line_value_m_n<'input>(
-  min_length: u8,
-  max_length: u8,
-) -> impl Fn(&'input str) -> IResult<&'input str, &'input str> {
-  take_while_m_n(min_length as usize, max_length as usize, is_not_terminator)
 }
 
 // ============
@@ -133,29 +100,10 @@ fn parse_terminator(input: &str) -> IResult<&str, Terminator> {
 // ==========
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct GedcomLine<'tag, 'value> {
+pub struct GedcomLine<'input> {
   pub level: u8,
-  pub tag: &'tag str,
-  pub value: Option<&'value str>,
-}
-
-#[derive(Debug, PartialEq)]
-pub struct GedcomLineWithoutValue<'tag> {
-  level: u8,
-  tag: &'tag str,
-}
-
-#[derive(Debug, PartialEq)]
-pub struct GedcomLineWithValue<'tag, 'value> {
-  level: u8,
-  tag: &'tag str,
-  pub value: &'value str,
-}
-
-impl From<GedcomLineWithValue<'_, '_>> for String {
-  fn from(line: GedcomLineWithValue) -> Self {
-    line.value.to_string()
-  }
+  pub tag: &'input str,
+  pub value: Option<&'input str>,
 }
 
 pub fn parse_gedcom_line(input: &str) -> IResult<&str, GedcomLine> {
@@ -168,93 +116,6 @@ pub fn parse_gedcom_line(input: &str) -> IResult<&str, GedcomLine> {
   ))(input)?;
 
   Ok((remaining_input, GedcomLine { level, tag, value }))
-}
-
-pub fn parse_gedcom_line_without_value<'input>(
-  level: u8,
-  tag: &str,
-) -> impl Fn(&'input str) -> IResult<&'input str, GedcomLineWithoutValue<'input>> {
-  map(
-    tuple((
-      parse_specific_level(level),
-      parse_delim,
-      parse_specific_tag(tag),
-      parse_terminator,
-    )),
-    |(level, _delim, tag, _terminator)| GedcomLineWithoutValue { tag, level },
-  )
-}
-
-pub fn parse_gedcom_line_with_value<'input>(
-  level: u8,
-  tag: &str,
-  min_line_length: u8,
-  max_line_length: u8,
-) -> impl Fn(&'input str) -> IResult<&'input str, GedcomLineWithValue<'input, 'input>> {
-  map(
-    tuple((
-      parse_specific_level(level),
-      parse_delim,
-      parse_specific_tag(tag),
-      parse_delim,
-      parse_line_value_m_n(min_line_length, max_line_length),
-      parse_terminator,
-    )),
-    |(level, _delim, tag, _delim_2, value, _terminator)| GedcomLineWithValue { level, tag, value },
-  )
-}
-
-pub fn parse_gedcom_line_value_only<'input>(
-  level: u8,
-  tag: &str,
-  min_line_length: u8,
-  max_line_length: u8,
-) -> impl Fn(&'input str) -> IResult<&'input str, String> {
-  map(
-    parse_gedcom_line_with_value(level, tag, min_line_length, max_line_length),
-    String::from,
-  )
-}
-
-#[test]
-fn parse_gedcom_line_without_value_valid() {
-  // Arrange
-  let input = "0 TAG\n";
-
-  // Act
-  let (remaining_text, gedcom_line) = parse_gedcom_line_without_value(0, "TAG")(input)
-    .expect("In this test, it should not return an error result.");
-
-  // Assert
-  assert_eq!(remaining_text, "");
-  assert_eq!(
-    gedcom_line,
-    GedcomLineWithoutValue {
-      level: 0,
-      tag: "TAG",
-    }
-  );
-}
-
-#[test]
-fn parse_gedcom_line_with_value_valid() {
-  // Arrange
-  let input = "0 TAG some value\n";
-
-  // Act
-  let (remaining_text, gedcom_line) = parse_gedcom_line_with_value(0, "TAG", 1, 10)(input)
-    .expect("In this test, it should not return an error result.");
-
-  // Assert
-  assert_eq!(remaining_text, "");
-  assert_eq!(
-    gedcom_line,
-    GedcomLineWithValue {
-      level: 0,
-      tag: "TAG",
-      value: "some value"
-    }
-  );
 }
 
 #[test]

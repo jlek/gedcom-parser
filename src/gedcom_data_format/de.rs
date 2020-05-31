@@ -29,8 +29,8 @@ use DeserializerState::*;
 #[derive(Debug)]
 pub struct Deserializer<'de> {
   remaining_input: &'de str,
-  current_line: GedcomLine<'de, 'de>,
-  next_line: Option<GedcomLine<'de, 'de>>,
+  current_line: GedcomLine<'de>,
+  next_line: Option<GedcomLine<'de>>,
   state: DeserializerState,
 }
 
