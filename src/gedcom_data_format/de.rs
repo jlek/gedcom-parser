@@ -18,12 +18,13 @@ where
   }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 enum DeserializerState {
   DeserialisingKey,
   DeserialisingValue,
   DeserialisingStringValue,
 }
+use DeserializerState::*;
 
 #[derive(Debug)]
 pub struct Deserializer<'de> {
@@ -42,7 +43,7 @@ impl<'de> Deserializer<'de> {
         remaining_input,
         current_line,
         next_line: None,
-        state: DeserializerState::DeserialisingValue,
+        state: DeserialisingValue,
       });
     }
 
@@ -51,7 +52,7 @@ impl<'de> Deserializer<'de> {
       remaining_input,
       current_line,
       next_line: Some(next_line),
-      state: DeserializerState::DeserialisingValue,
+      state: DeserialisingValue,
     })
   }
 
@@ -81,9 +82,9 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     V: Visitor<'de>,
   {
     match self.state {
-      DeserializerState::DeserialisingKey => self.deserialize_str(visitor),
-      DeserializerState::DeserialisingStringValue => self.deserialize_str(visitor),
-      DeserializerState::DeserialisingValue => {
+      DeserialisingKey => self.deserialize_str(visitor),
+      DeserialisingStringValue => self.deserialize_str(visitor),
+      DeserialisingValue => {
         if self
           .next_line
           .map(|line| line.level == self.current_line.level + 1)
@@ -102,7 +103,7 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     V: Visitor<'de>,
   {
     match self.state {
-      DeserializerState::DeserialisingKey => visitor.visit_borrowed_str(self.current_line.tag),
+      DeserialisingKey => visitor.visit_borrowed_str(self.current_line.tag),
       _ => {
         let value = self
           .current_line
@@ -143,13 +144,22 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
   fn deserialize_enum<V>(
     self,
     _name: &'static str,
-    _variants: &'static [&'static str],
+    variants: &'static [&'static str],
     visitor: V,
   ) -> Result<V::Value>
   where
     V: Visitor<'de>,
   {
-    visitor.visit_enum(GedcomEnumAccess { de: self })
+    if self
+      .current_line
+      .value
+      .map(|value| variants.contains(&value))
+      .unwrap_or(false)
+    {
+      visitor.visit_enum(GedcomSimpleEnumAccess::new(self))
+    } else {
+      visitor.visit_enum(GedcomComplexEnumAccess::new(self))
+    }
   }
 
   forward_to_deserialize_any! {
@@ -197,11 +207,12 @@ impl<'de, 'a> SeqAccess<'de> for GedcomSequenceAccess<'a, 'de> {
     }
 
     self.de.parse_next_line()?;
-    self.de.state = DeserializerState::DeserialisingValue;
+    self.de.state = DeserialisingValue;
     seed.deserialize(&mut *self.de).map(Some)
   }
 }
 
+#[derive(Debug)]
 struct GedcomMapAccess<'a, 'de: 'a> {
   de: &'a mut Deserializer<'de>,
   first: bool,
@@ -231,7 +242,7 @@ impl<'de, 'a> MapAccess<'de> for GedcomMapAccess<'a, 'de> {
       self.first = false;
       if self.de.current_line.value.is_some() {
         self.seeding_implicit_field = true;
-        self.de.state = DeserializerState::DeserialisingKey;
+        self.de.state = DeserialisingKey;
         return seed.deserialize(&mut *self.de).map(Some);
       }
     }
@@ -239,14 +250,14 @@ impl<'de, 'a> MapAccess<'de> for GedcomMapAccess<'a, 'de> {
     if self
       .de
       .next_line
-      .map(|line| line.level == self.map_level - 1)
+      .map(|line| line.level < self.map_level)
       .unwrap_or(true)
     {
       return Ok(None);
     }
 
     self.de.parse_next_line()?;
-    self.de.state = DeserializerState::DeserialisingKey;
+    self.de.state = DeserialisingKey;
     seed.deserialize(&mut *self.de).map(Some)
   }
 
@@ -255,20 +266,27 @@ impl<'de, 'a> MapAccess<'de> for GedcomMapAccess<'a, 'de> {
     V: DeserializeSeed<'de>,
   {
     if self.seeding_implicit_field {
-      self.de.state = DeserializerState::DeserialisingStringValue;
+      self.de.state = DeserialisingStringValue;
       self.seeding_implicit_field = false;
     } else {
-      self.de.state = DeserializerState::DeserialisingValue;
+      self.de.state = DeserialisingValue;
     }
     seed.deserialize(&mut *self.de)
   }
 }
 
-struct GedcomEnumAccess<'a, 'de: 'a> {
+#[derive(Debug)]
+struct GedcomSimpleEnumAccess<'a, 'de: 'a> {
   de: &'a mut Deserializer<'de>,
 }
 
-impl<'de, 'a> EnumAccess<'de> for GedcomEnumAccess<'a, 'de> {
+impl<'a, 'de> GedcomSimpleEnumAccess<'a, 'de> {
+  fn new(de: &'a mut Deserializer<'de>) -> Self {
+    Self { de }
+  }
+}
+
+impl<'de, 'a> EnumAccess<'de> for GedcomSimpleEnumAccess<'a, 'de> {
   type Error = Error;
   type Variant = Self;
 
@@ -276,14 +294,67 @@ impl<'de, 'a> EnumAccess<'de> for GedcomEnumAccess<'a, 'de> {
   where
     V: DeserializeSeed<'de>,
   {
-    self.de.state = DeserializerState::DeserialisingKey;
     let variant = seed.deserialize(&mut *self.de)?;
-    self.de.state = DeserializerState::DeserialisingValue;
     Ok((variant, self))
   }
 }
 
-impl<'de, 'a> VariantAccess<'de> for GedcomEnumAccess<'a, 'de> {
+impl<'de, 'a> VariantAccess<'de> for GedcomSimpleEnumAccess<'a, 'de> {
+  type Error = Error;
+
+  fn unit_variant(self) -> Result<()> {
+    Ok(())
+  }
+
+  fn newtype_variant_seed<T>(self, _seed: T) -> Result<T::Value>
+  where
+    T: DeserializeSeed<'de>,
+  {
+    unimplemented!()
+  }
+
+  fn tuple_variant<V>(self, _len: usize, _visitor: V) -> Result<V::Value>
+  where
+    V: Visitor<'de>,
+  {
+    unimplemented!()
+  }
+
+  fn struct_variant<V>(self, _fields: &'static [&'static str], _visitor: V) -> Result<V::Value>
+  where
+    V: Visitor<'de>,
+  {
+    unimplemented!()
+  }
+}
+
+#[derive(Debug)]
+struct GedcomComplexEnumAccess<'a, 'de: 'a> {
+  de: &'a mut Deserializer<'de>,
+}
+
+impl<'a, 'de> GedcomComplexEnumAccess<'a, 'de> {
+  fn new(de: &'a mut Deserializer<'de>) -> Self {
+    Self { de }
+  }
+}
+
+impl<'de, 'a> EnumAccess<'de> for GedcomComplexEnumAccess<'a, 'de> {
+  type Error = Error;
+  type Variant = Self;
+
+  fn variant_seed<V>(self, seed: V) -> Result<(V::Value, Self::Variant)>
+  where
+    V: DeserializeSeed<'de>,
+  {
+    self.de.state = DeserialisingKey;
+    let variant = seed.deserialize(&mut *self.de)?;
+    self.de.state = DeserialisingValue;
+    Ok((variant, self))
+  }
+}
+
+impl<'de, 'a> VariantAccess<'de> for GedcomComplexEnumAccess<'a, 'de> {
   type Error = Error;
 
   fn unit_variant(self) -> Result<()> {
@@ -610,4 +681,28 @@ fn test_sequence_of_enum() {
   assert_eq!(result.len(), 2);
   assert_eq!(result[0], FooBaz::Foo(Foo { bar: "bar" }));
   assert_eq!(result[1], FooBaz::Baz);
+}
+
+#[test]
+fn test_enum_value() {
+  use serde::Deserialize;
+
+  #[derive(Deserialize, PartialEq, Debug)]
+  struct Foo {
+    #[serde(rename(deserialize = "BAR"))]
+    bar: Bar,
+  }
+
+  #[derive(Deserialize, PartialEq, Debug)]
+  enum Bar {
+    #[serde(rename = "baz")]
+    Baz,
+    #[serde(rename = "qux")]
+    Qux,
+  }
+  use Bar::*;
+
+  let input = "0 FOO\n1 BAR qux\n";
+  let result: Foo = from_str(input).expect("No errors during this test");
+  assert_eq!(result, Foo { bar: Qux });
 }
