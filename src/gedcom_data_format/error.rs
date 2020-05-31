@@ -41,7 +41,8 @@ impl Display for Error {
 }
 
 impl std::convert::From<nom::Err<(&str, nom::error::ErrorKind)>> for Error {
-  fn from(_nom_error: nom::Err<(&str, nom::error::ErrorKind)>) -> Error {
+  fn from(nom_error: nom::Err<(&str, nom::error::ErrorKind)>) -> Error {
+    println!("{}", nom_error);
     Error::InvalidGedcomLine
   }
 }

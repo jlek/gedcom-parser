@@ -1,3 +1,4 @@
+use super::utilities::{from_decimal, is_decimal_digit};
 use nom::{
   branch::alt,
   bytes::complete::{tag as specific_characters, take_till1, take_while_m_n},
@@ -10,15 +11,7 @@ use nom::{
 // Level
 // =====
 
-fn from_decimal(input: &str) -> Result<u8, std::num::ParseIntError> {
-  u8::from_str_radix(input, 10)
-}
-
-fn is_decimal_digit(character: char) -> bool {
-  character.is_digit(10)
-}
-
-pub fn parse_level(input: &str) -> IResult<&str, u8> {
+fn parse_level(input: &str) -> IResult<&str, u8> {
   map_res(take_while_m_n(1, 2, is_decimal_digit), from_decimal)(input)
 }
 
@@ -39,12 +32,12 @@ fn parse_specific_level<'level, 'input>(
 // Tag
 // ===
 
-fn is_alphanumeric(character: char) -> bool {
-  character.is_alphanumeric()
+fn is_alphanumeric_or_underscore(character: char) -> bool {
+  character.is_alphanumeric() || character == '_'
 }
 
 fn parse_tag(input: &str) -> IResult<&str, &str> {
-  take_while_m_n(1, 32, is_alphanumeric)(input)
+  take_while_m_n(1, 32, is_alphanumeric_or_underscore)(input)
 }
 
 fn parse_specific_tag<'input>(
