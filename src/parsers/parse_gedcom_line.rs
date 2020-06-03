@@ -1,8 +1,8 @@
 use super::utilities::{from_decimal, is_decimal_digit};
 use nom::{
   branch::alt,
-  bytes::complete::{tag as specific_characters, take_till1, take_while_m_n},
-  combinator::{map, map_res, opt},
+  bytes::complete::{tag as specific_characters, take_till1, take_while1, take_while_m_n},
+  combinator::{map_res, opt},
   sequence::{preceded, tuple},
   IResult,
 };
@@ -13,6 +13,22 @@ use nom::{
 
 fn parse_level(input: &str) -> IResult<&str, u8> {
   map_res(take_while_m_n(1, 2, is_decimal_digit), from_decimal)(input)
+}
+
+// =======
+// XREF ID
+// =======
+
+type XrefId<'input> = &'input str;
+
+fn parse_xref_id(input: &str) -> IResult<&str, XrefId> {
+  let (remaining_input, (_, id, _)) = tuple((
+    specific_characters("@"),
+    take_while1(|c: char| c.is_alphanumeric()),
+    specific_characters("@"),
+  ))(input)?;
+
+  Ok((remaining_input, id))
 }
 
 // ===
@@ -102,20 +118,30 @@ fn parse_terminator(input: &str) -> IResult<&str, Terminator> {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct GedcomLine<'input> {
   pub level: u8,
+  pub xref_id: Option<XrefId<'input>>,
   pub tag: &'input str,
   pub value: Option<&'input str>,
 }
 
 pub fn parse_gedcom_line(input: &str) -> IResult<&str, GedcomLine> {
-  let (remaining_input, (level, _delim, tag, value, _terminator)) = tuple((
+  let (remaining_input, (level, xref_id, _delim, tag, value, _terminator)) = tuple((
     parse_level,
+    opt(preceded(parse_delim, parse_xref_id)),
     parse_delim,
     parse_tag,
     opt(preceded(parse_delim, parse_line_value)),
     parse_terminator,
   ))(input)?;
 
-  Ok((remaining_input, GedcomLine { level, tag, value }))
+  Ok((
+    remaining_input,
+    GedcomLine {
+      level,
+      xref_id,
+      tag,
+      value,
+    },
+  ))
 }
 
 #[test]
@@ -132,6 +158,7 @@ fn parse_gedcom_line_valid() {
     gedcom_line,
     GedcomLine {
       level: 0,
+      xref_id: None,
       tag: "TAG",
       value: Some("Some value"),
     }
@@ -152,6 +179,7 @@ fn parse_gedcom_line_double_digit_level() {
     gedcom_line,
     GedcomLine {
       level: 10,
+      xref_id: None,
       tag: "TAG",
       value: Some("Some value"),
     }
@@ -172,6 +200,7 @@ fn parse_gedcom_line_no_line_value() {
     gedcom_line,
     GedcomLine {
       level: 0,
+      xref_id: None,
       tag: "TAG",
       value: None,
     }

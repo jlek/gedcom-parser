@@ -9,7 +9,7 @@ fn header_only() {
   };
 
   // Arrange
-  let input = include_str!("header_only.ged");
+  let input = include_str!("header-only.ged");
 
   // Act
   let header: Header = from_str(input).expect("testy no crashy");

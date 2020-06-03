@@ -166,7 +166,12 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
   where
     V: Visitor<'de>,
   {
-    if self.current_line.value.is_some() {
+    if self.current_line.value.is_some()
+      || self
+        .next_line
+        .map(|line| line.level == self.current_line.level + 1)
+        .unwrap_or(false)
+    {
       visitor.visit_some(self)
     } else {
       visitor.visit_none()

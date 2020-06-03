@@ -1,5 +1,5 @@
-use crate::parsers::{parse_date_exact, parse_time_value};
-use serde::{Deserialize, Deserializer};
+use super::{deserialise_date_exact, deserialise_time_value, DateExact, TimeValue};
+use serde::Deserialize;
 
 #[derive(Debug, Deserialize, PartialEq)]
 pub struct Header<'input> {
@@ -61,68 +61,6 @@ pub struct TransmissionDateTime {
   pub date: DateExact,
   #[serde(rename = "TIME", deserialize_with = "deserialise_time_value")]
   pub time: TimeValue,
-}
-
-#[derive(Debug, PartialEq)]
-pub struct DateExact {
-  pub day: u8,
-  pub month: Month,
-  pub year: i16,
-}
-
-fn deserialise_date_exact<'de, D>(deserializer: D) -> Result<DateExact, D::Error>
-where
-  D: Deserializer<'de>,
-{
-  let date_as_string = String::deserialize(deserializer)?;
-  let (remaining_input, date) =
-    parse_date_exact(&date_as_string).map_err(serde::de::Error::custom)?;
-  if remaining_input.is_empty() {
-    Ok(date)
-  } else {
-    Err(serde::de::Error::custom(
-      "Trailing characters left after parsing DateExact.",
-    ))
-  }
-}
-
-#[derive(Debug, Deserialize, PartialEq)]
-pub enum Month {
-  January,
-  February,
-  March,
-  April,
-  May,
-  June,
-  July,
-  August,
-  September,
-  October,
-  November,
-  December,
-}
-
-#[derive(Debug, PartialEq)]
-pub struct TimeValue {
-  pub hours: u8,
-  pub minutes: u8,
-  pub seconds: Option<u8>,
-}
-
-fn deserialise_time_value<'de, D>(deserializer: D) -> Result<TimeValue, D::Error>
-where
-  D: Deserializer<'de>,
-{
-  let date_as_string = String::deserialize(deserializer)?;
-  let (remaining_input, time) =
-    parse_time_value(&date_as_string).map_err(serde::de::Error::custom)?;
-  if remaining_input.is_empty() {
-    Ok(time)
-  } else {
-    Err(serde::de::Error::custom(
-      "Trailing characters left after parsing TimeValue.",
-    ))
-  }
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
