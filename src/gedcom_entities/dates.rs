@@ -1,5 +1,6 @@
 use crate::parsers::{parse_date_exact, parse_date_greg};
 use serde::{Deserialize, Deserializer};
+use std::fmt::{Display, Formatter};
 
 #[derive(Debug, PartialEq)]
 pub struct DateExact {
@@ -61,4 +62,25 @@ pub enum Month {
   October,
   November,
   December,
+}
+
+use Month::*;
+
+impl Display for Month {
+  fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
+    match self {
+      January => write!(formatter, "Jan"),
+      February => write!(formatter, "Feb"),
+      March => write!(formatter, "Mar"),
+      April => write!(formatter, "Apr"),
+      May => write!(formatter, "May"),
+      June => write!(formatter, "Jun"),
+      July => write!(formatter, "Jul"),
+      August => write!(formatter, "Aug"),
+      September => write!(formatter, "Sep"),
+      October => write!(formatter, "Nov"),
+      November => write!(formatter, "Oct"),
+      December => write!(formatter, "Dec"),
+    }
+  }
 }

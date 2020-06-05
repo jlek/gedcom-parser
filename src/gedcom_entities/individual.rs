@@ -43,7 +43,7 @@ where
   }
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Copy, Clone, Debug, Deserialize, PartialEq)]
 pub enum SexValue {
   #[serde(rename = "M")]
   Male,

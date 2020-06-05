@@ -51,10 +51,6 @@ fn is_terminator(character: char) -> bool {
   parse_terminator(&character.to_string()).is_ok()
 }
 
-fn is_not_terminator(character: char) -> bool {
-  !is_terminator(character)
-}
-
 fn parse_line_value(input: &str) -> IResult<&str, &str> {
   take_till1(is_terminator)(input)
 }
