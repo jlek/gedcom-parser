@@ -15,10 +15,13 @@ use serde_json::to_string_pretty;
 use std::fs::{read_to_string, write};
 use transform_gedcom_to_relation::transform_gedcom_to_relation;
 
+const SOURCE_FILE_PATH: &'static str = "src/tests/one-node.ged";
+const TARGET_FILE_PATH: &'static str = "src/tests/one-node.json";
+
 fn main() {
-  let file = read_to_string("src/tests/one-node.ged").expect("File should exist");
+  let file = read_to_string(SOURCE_FILE_PATH).expect("File should exist");
   let records: Vec<Record> = from_str(&file).expect("program no crashy");
   let family_tree = transform_gedcom_to_relation(&records);
   let json = to_string_pretty(&family_tree).expect("program no crashy");
-  write("src/tests/one-node.json", json).expect("program no crashy");
+  write(TARGET_FILE_PATH, json).expect("program no crashy");
 }
