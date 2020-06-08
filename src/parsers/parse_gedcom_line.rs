@@ -61,16 +61,14 @@ fn parse_line_value(input: &str) -> IResult<&str, &str> {
 
 struct Delim {}
 
-struct InputIsNotADelimError<'input> {
-  input: &'input str,
-}
+struct InputIsNotADelimError {}
 
 const DELIM: &str = " "; // Should be 0x20
 
 fn from_delim(input: &str) -> Result<Delim, InputIsNotADelimError> {
   match input {
     DELIM => Ok(Delim {}),
-    _ => Err(InputIsNotADelimError { input }),
+    _ => Err(InputIsNotADelimError {}),
   }
 }
 
@@ -84,14 +82,12 @@ fn parse_delim(input: &str) -> IResult<&str, Delim> {
 
 struct Terminator {}
 
-struct InputIsNotATerminatorError<'input> {
-  input: &'input str,
-}
+struct InputIsNotATerminatorError {}
 
 fn from_terminator(input: &str) -> Result<Terminator, InputIsNotATerminatorError> {
   match input {
     "\r\n" | "\n\r" | "\n" | "\r" => Ok(Terminator {}),
-    _ => Err(InputIsNotATerminatorError { input }),
+    _ => Err(InputIsNotATerminatorError {}),
   }
 }
 
